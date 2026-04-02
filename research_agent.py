@@ -694,7 +694,6 @@ def format_cost_line(cost_estimate: CostEstimate) -> str:
 
 def build_slack_payload(job: Job, result: dict[str, Any], cost_estimate: CostEstimate | None = None) -> dict[str, Any]:
     opportunities = first_opportunities(result.get("opportunities", []))
-    watch_items = result.get("watch_items", [])
     summary = truncate(str(result.get("overall_summary", "")).strip(), 240) or "No summary returned."
 
     blocks: list[dict[str, Any]] = [
@@ -744,31 +743,6 @@ def build_slack_payload(job: Job, result: dict[str, Any], cost_estimate: CostEst
                 "text": {"type": "mrkdwn", "text": "_No actionable opportunities were found in this run._"},
             }
         )
-
-    if isinstance(watch_items, list) and watch_items:
-        lines = []
-        for raw_item in watch_items[:5]:
-            if not isinstance(raw_item, dict):
-                continue
-            topic = str(raw_item.get("topic", "Watch item")).strip() or "Watch item"
-            reason = truncate(str(raw_item.get("reason", "")).strip(), 80)
-            source_url = str(raw_item.get("source_url", "")).strip()
-            line = f"• *{topic}*"
-            if reason:
-                line += f" - {reason}"
-            if source_url:
-                line += f"\n{slack_link(source_url, 'Reference')}"
-            lines.append(line)
-        if lines:
-            blocks.extend(
-                [
-                    {"type": "divider"},
-                    {
-                        "type": "section",
-                        "text": {"type": "mrkdwn", "text": "👀 *Watch list*\n" + "\n".join(lines)},
-                    },
-                ]
-            )
 
     return {"text": f"Research Update: {job.name}", "blocks": blocks}
 
