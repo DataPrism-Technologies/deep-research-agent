@@ -1,0 +1,31 @@
+[project]
+name = "deep-research-agent"
+version = "0.1.0"
+description = "Daily Gemini Deep Research runner with Slack notifications"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "python-dotenv>=1.1.0",
+  "pyyaml>=6.0.2",
+]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.11.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "B",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

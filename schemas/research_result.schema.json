@@ -1,0 +1,114 @@
+{
+  "type": "object",
+  "properties": {
+    "generated_at": {
+      "type": "string"
+    },
+    "query_summary": {
+      "type": "string"
+    },
+    "overall_summary": {
+      "type": "string"
+    },
+    "opportunities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "exhibition",
+              "conference",
+              "meetup",
+              "networking",
+              "accelerator",
+              "other"
+            ]
+          },
+          "date_text": {
+            "type": "string"
+          },
+          "date_iso": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "prefecture": {
+            "type": "string"
+          },
+          "why_relevant": {
+            "type": "string"
+          },
+          "recommended_action": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "source_title": {
+            "type": "string"
+          },
+          "source_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "category",
+          "date_text",
+          "date_iso",
+          "venue",
+          "area",
+          "prefecture",
+          "why_relevant",
+          "recommended_action",
+          "priority",
+          "source_title",
+          "source_url"
+        ]
+      }
+    },
+    "watch_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "reason",
+          "source_url"
+        ]
+      }
+    }
+  },
+  "required": [
+    "generated_at",
+    "query_summary",
+    "overall_summary",
+    "opportunities",
+    "watch_items"
+  ]
+}
