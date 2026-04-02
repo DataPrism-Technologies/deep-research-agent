@@ -687,8 +687,8 @@ def format_opportunity_lines(item: dict[str, Any]) -> str:
 
 def format_cost_line(cost_estimate: CostEstimate) -> str:
     return (
-        f"*Approx cost:* ${cost_estimate.total_usd:.3f} "
-        f"(research ${cost_estimate.deep_research_usd:.3f} + structuring ${cost_estimate.structuring_usd:.3f})"
+        f"*概算コスト:* ${cost_estimate.total_usd:.3f} "
+        f"(調査 ${cost_estimate.deep_research_usd:.3f} + 整形 ${cost_estimate.structuring_usd:.3f})"
     )
 
 
@@ -696,7 +696,6 @@ def build_slack_payload(job: Job, result: dict[str, Any], cost_estimate: CostEst
     opportunities = first_opportunities(result.get("opportunities", []))
     watch_items = result.get("watch_items", [])
     summary = truncate(str(result.get("overall_summary", "")).strip(), 240) or "No summary returned."
-    query_summary = truncate(str(result.get("query_summary", "")).strip(), 140)
 
     blocks: list[dict[str, Any]] = [
         {
@@ -707,23 +706,7 @@ def build_slack_payload(job: Job, result: dict[str, Any], cost_estimate: CostEst
             "type": "section",
             "text": {"type": "mrkdwn", "text": summary},
         },
-        {
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": f"*Generated:* {result.get('generated_at', '')}"},
-                {"type": "mrkdwn", "text": f"*Research Agent:* `{DEEP_RESEARCH_AGENT}`"},
-                {"type": "mrkdwn", "text": f"*Formatter:* `{STRUCTURED_OUTPUT_MODEL}`"},
-            ],
-        },
     ]
-
-    if query_summary:
-        blocks.append(
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Search focus:* {query_summary}"},
-            }
-        )
 
     if cost_estimate is not None:
         blocks.append(
@@ -731,7 +714,7 @@ def build_slack_payload(job: Job, result: dict[str, Any], cost_estimate: CostEst
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": format_cost_line(cost_estimate) + f"\n_{cost_estimate.note}_",
+                    "text": format_cost_line(cost_estimate) + "\n_概算です。検索課金は含みません。_",
                 },
             }
         )
