@@ -145,6 +145,7 @@ uv run ruff check . --fix
 - Deep Research は `deep-research-pro-preview-12-2025`
 - JSON 整形は `gemini-2.5-flash`
 - Deep Research は非同期で起動し、完了までポーリング
+- Slack 通知には token-only の概算コストを表示
 - 1 ジョブ失敗しても残りのジョブは継続
 - 1 件でも失敗するとプロセスは非ゼロ終了
 - `--dry-run` では Slack を送らず JSON を標準出力
@@ -157,6 +158,15 @@ uv run ruff check . --fix
 - `SLACK_WEBHOOK_EVENT_RESEARCH`
 
 ジョブを追加したら、そのジョブの `slack_webhook_env` に対応する Secret も追加してください。
+
+設定手順:
+
+1. GitHub の `Settings` -> `Secrets and variables` -> `Actions` を開く
+2. `GEMINI_API_KEY` を登録する
+3. `SLACK_WEBHOOK_EVENT_RESEARCH` を登録する
+4. `Actions` タブから `Daily Research` を一度 `Run workflow` で手動実行する
+
+現在の workflow は `uv sync --locked` を使うため、リポジトリにある `uv.lock` を前提にそのまま実行できます。
 
 ## 注意点
 

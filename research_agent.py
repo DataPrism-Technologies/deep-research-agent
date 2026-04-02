@@ -13,7 +13,7 @@ import traceback
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,11 @@ HTTP_RETRY_DELAY_SECONDS = 5
 DEFAULT_JOB_DIRECTORY = "jobs"
 DEFAULT_PROMPT_DEFINITION_PATH = "prompts/prompt_definition.yaml"
 DEFAULT_RESPONSE_SCHEMA_PATH = "schemas/research_result.schema.json"
+GEMINI_31_PRO_INPUT_COST_PER_MILLION = 2.00
+GEMINI_31_PRO_OUTPUT_COST_PER_MILLION = 12.00
+GEMINI_25_FLASH_INPUT_COST_PER_MILLION = 0.30
+GEMINI_25_FLASH_OUTPUT_COST_PER_MILLION = 2.50
+GEMINI_25_FLASH_CACHE_COST_PER_MILLION = 0.03
 
 
 @dataclass
@@ -56,6 +61,18 @@ class AppConfig:
     structuring_user_prompt: str
     response_schema: dict[str, Any]
     skipped_job_files: list[tuple[str, str]]
+
+
+@dataclass
+class CostEstimate:
+    total_usd: float
+    deep_research_usd: float
+    structuring_usd: float
+    deep_research_input_tokens: int
+    deep_research_output_tokens: int
+    structuring_input_tokens: int
+    structuring_output_tokens: int
+    note: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -526,6 +543,86 @@ def parse_model_json(text: str) -> dict[str, Any]:
     return parsed
 
 
+def parse_iso_date(value: str) -> date | None:
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def get_int_field(payload: dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+    return 0
+
+
+def estimate_deep_research_cost(interaction_payload: dict[str, Any]) -> tuple[float, int, int]:
+    usage = interaction_payload.get("usage")
+    if not isinstance(usage, dict):
+        return 0.0, 0, 0
+
+    input_tokens = (
+        get_int_field(usage, "total_input_tokens", "totalInputTokens")
+        + get_int_field(usage, "total_tool_use_tokens", "totalToolUseTokens")
+    )
+    output_tokens = (
+        get_int_field(usage, "total_output_tokens", "totalOutputTokens")
+        + get_int_field(usage, "total_thought_tokens", "totalThoughtTokens")
+    )
+    cost = (
+        input_tokens / 1_000_000 * GEMINI_31_PRO_INPUT_COST_PER_MILLION
+        + output_tokens / 1_000_000 * GEMINI_31_PRO_OUTPUT_COST_PER_MILLION
+    )
+    return cost, input_tokens, output_tokens
+
+
+def estimate_structuring_cost(response_payload: dict[str, Any]) -> tuple[float, int, int]:
+    usage = response_payload.get("usageMetadata")
+    if not isinstance(usage, dict):
+        usage = response_payload.get("usage_metadata")
+    if not isinstance(usage, dict):
+        return 0.0, 0, 0
+
+    prompt_tokens = get_int_field(usage, "promptTokenCount", "prompt_token_count")
+    cached_tokens = get_int_field(usage, "cachedContentTokenCount", "cached_content_token_count")
+    candidate_tokens = get_int_field(usage, "candidatesTokenCount", "candidates_token_count")
+    thought_tokens = get_int_field(usage, "thoughtsTokenCount", "thoughts_token_count")
+    billable_prompt_tokens = max(prompt_tokens - cached_tokens, 0)
+    output_tokens = candidate_tokens + thought_tokens
+    cost = (
+        billable_prompt_tokens / 1_000_000 * GEMINI_25_FLASH_INPUT_COST_PER_MILLION
+        + cached_tokens / 1_000_000 * GEMINI_25_FLASH_CACHE_COST_PER_MILLION
+        + output_tokens / 1_000_000 * GEMINI_25_FLASH_OUTPUT_COST_PER_MILLION
+    )
+    return cost, prompt_tokens, output_tokens
+
+
+def build_cost_estimate(interaction_payload: dict[str, Any], structured_payload: dict[str, Any]) -> CostEstimate:
+    deep_research_usd, deep_research_input_tokens, deep_research_output_tokens = estimate_deep_research_cost(
+        interaction_payload
+    )
+    structuring_usd, structuring_input_tokens, structuring_output_tokens = estimate_structuring_cost(
+        structured_payload
+    )
+    return CostEstimate(
+        total_usd=deep_research_usd + structuring_usd,
+        deep_research_usd=deep_research_usd,
+        structuring_usd=structuring_usd,
+        deep_research_input_tokens=deep_research_input_tokens,
+        deep_research_output_tokens=deep_research_output_tokens,
+        structuring_input_tokens=structuring_input_tokens,
+        structuring_output_tokens=structuring_output_tokens,
+        note="Approximate token-only cost. Google Search query fees are excluded.",
+    )
+
+
 def truncate(text: str, limit: int) -> str:
     compact = " ".join(text.split())
     if len(compact) <= limit:
@@ -534,42 +631,72 @@ def truncate(text: str, limit: int) -> str:
 
 
 def first_opportunities(opportunities: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
+    today = datetime.now().date()
     cleaned: list[dict[str, Any]] = []
     for item in opportunities:
-        if isinstance(item, dict):
-            cleaned.append(item)
+        if not isinstance(item, dict):
+            continue
+        event_date = parse_iso_date(str(item.get("date_iso", "")))
+        if event_date is not None and event_date < today:
+            continue
+        cleaned.append(item)
         if len(cleaned) >= limit:
             break
     return cleaned
 
 
+def format_slack_date(date_iso: str, fallback_text: str) -> str:
+    parsed_date = parse_iso_date(date_iso)
+    if parsed_date is None:
+        return fallback_text
+    unix_timestamp = int(datetime(parsed_date.year, parsed_date.month, parsed_date.day, tzinfo=UTC).timestamp())
+    return f"<!date^{unix_timestamp}^{{date_long_pretty}}|{fallback_text}>"
+
+
+def slack_link(url: str, label: str) -> str:
+    if not url:
+        return label
+    return f"<{url}|{label}>"
+
+
 def format_opportunity_lines(item: dict[str, Any]) -> str:
     name = str(item.get("name", "Untitled opportunity")).strip() or "Untitled opportunity"
     date_text = str(item.get("date_text", "Date TBD")).strip() or "Date TBD"
+    date_iso = str(item.get("date_iso", "")).strip()
     area = str(item.get("area", "")).strip()
     prefecture = str(item.get("prefecture", "")).strip()
     location = " / ".join(part for part in (area, prefecture) if part)
-    relevance = truncate(str(item.get("why_relevant", "")).strip(), 180)
-    action = truncate(str(item.get("recommended_action", "")).strip(), 140)
+    relevance = truncate(str(item.get("why_relevant", "")).strip(), 90)
+    action = truncate(str(item.get("recommended_action", "")).strip(), 70)
+    source_title = str(item.get("source_title", "")).strip() or "Source"
     source_url = str(item.get("source_url", "")).strip()
+    slack_date = format_slack_date(date_iso=date_iso, fallback_text=date_text)
 
-    lines = [f"*{name}*", f"Date: {date_text}"]
+    title_text = slack_link(source_url, name)
+    lines = [f"*{title_text}*", f"When: {slack_date}"]
     if location:
-        lines.append(f"Area: {location}")
+        lines.append(f"Where: {location}")
     if relevance:
         lines.append(f"Why: {relevance}")
     if action:
         lines.append(f"Action: {action}")
     if source_url:
-        lines.append(f"Source: {source_url}")
+        lines.append(f"Source: {slack_link(source_url, source_title)}")
     return "\n".join(lines)
 
 
-def build_slack_payload(job: Job, result: dict[str, Any]) -> dict[str, Any]:
+def format_cost_line(cost_estimate: CostEstimate) -> str:
+    return (
+        f"*Approx cost:* ${cost_estimate.total_usd:.3f} "
+        f"(research ${cost_estimate.deep_research_usd:.3f} + structuring ${cost_estimate.structuring_usd:.3f})"
+    )
+
+
+def build_slack_payload(job: Job, result: dict[str, Any], cost_estimate: CostEstimate | None = None) -> dict[str, Any]:
     opportunities = first_opportunities(result.get("opportunities", []))
     watch_items = result.get("watch_items", [])
-    summary = truncate(str(result.get("overall_summary", "")).strip(), 1000) or "No summary returned."
-    query_summary = truncate(str(result.get("query_summary", "")).strip(), 300)
+    summary = truncate(str(result.get("overall_summary", "")).strip(), 240) or "No summary returned."
+    query_summary = truncate(str(result.get("query_summary", "")).strip(), 140)
 
     blocks: list[dict[str, Any]] = [
         {
@@ -595,6 +722,17 @@ def build_slack_payload(job: Job, result: dict[str, Any]) -> dict[str, Any]:
             {
                 "type": "section",
                 "text": {"type": "mrkdwn", "text": f"*Search focus:* {query_summary}"},
+            }
+        )
+
+    if cost_estimate is not None:
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": format_cost_line(cost_estimate) + f"\n_{cost_estimate.note}_",
+                },
             }
         )
 
@@ -630,13 +768,13 @@ def build_slack_payload(job: Job, result: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(raw_item, dict):
                 continue
             topic = str(raw_item.get("topic", "Watch item")).strip() or "Watch item"
-            reason = truncate(str(raw_item.get("reason", "")).strip(), 140)
+            reason = truncate(str(raw_item.get("reason", "")).strip(), 80)
             source_url = str(raw_item.get("source_url", "")).strip()
             line = f"• *{topic}*"
             if reason:
                 line += f" - {reason}"
             if source_url:
-                line += f"\n{source_url}"
+                line += f"\n{slack_link(source_url, 'Reference')}"
             lines.append(line)
         if lines:
             blocks.extend(
@@ -693,13 +831,24 @@ def run_job(api_key: str, app_config: AppConfig, job: Job, dry_run: bool = False
     )
     structured_text = extract_generate_content_text(structured_payload)
     parsed_result = parse_model_json(structured_text)
+    cost_estimate = build_cost_estimate(interaction, structured_payload)
+    parsed_result["cost_estimate"] = {
+        "total_usd": round(cost_estimate.total_usd, 6),
+        "deep_research_usd": round(cost_estimate.deep_research_usd, 6),
+        "structuring_usd": round(cost_estimate.structuring_usd, 6),
+        "deep_research_input_tokens": cost_estimate.deep_research_input_tokens,
+        "deep_research_output_tokens": cost_estimate.deep_research_output_tokens,
+        "structuring_input_tokens": cost_estimate.structuring_input_tokens,
+        "structuring_output_tokens": cost_estimate.structuring_output_tokens,
+        "note": cost_estimate.note,
+    }
 
     if dry_run:
         print(json.dumps(parsed_result, ensure_ascii=False, indent=2))
         return
 
     webhook_url = require_env(job.slack_webhook_env)
-    slack_payload = build_slack_payload(job=job, result=parsed_result)
+    slack_payload = build_slack_payload(job=job, result=parsed_result, cost_estimate=cost_estimate)
     send_slack_notification(webhook_url=webhook_url, payload=slack_payload)
 
 

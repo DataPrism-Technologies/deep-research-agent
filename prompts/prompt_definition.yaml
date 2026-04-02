@@ -7,6 +7,7 @@ deep_research:
     - 日本国内の公式サイト、主催者ページ、公的機関、商工会議所、自治体、産業振興財団などを優先する
     - 開催予定日、募集状況、対象者、開催場所をできるだけ確認する
     - 直近で開催予定、募集中、または新規告知された対面イベントを優先する
+    - 過去に開催済みのイベントは原則として候補に含めない
     - 日付や開催有無が曖昧な場合は、推測せず曖昧であることを明記する
     - 出典URLをできるだけ具体的に残す
     - 出力は日本語で簡潔にまとめる
@@ -26,11 +27,13 @@ structuring:
   system_prompt: |
     あなたは、Deep Research の調査レポートを strict JSON に整形する担当です。
     JSON のキー名は既存仕様を維持し、本文値は自然な日本語で出力してください。
+    Slack 通知で読みやすいように、説明は短く要点だけにしてください。
   user_prompt: |
     以下の Deep Research レポートを strict JSON に変換してください。
 
     重要ルール:
     - レポートに書かれている事実だけを使う
+    - 過去に開催済みのイベントは opportunities に入れない
     - 日付、会場、URL を推測で補わない
     - 不明な項目は空文字にする
     - opportunities は実務上の優先度が高い順に最大 8 件まで
@@ -39,6 +42,9 @@ structuring:
     - priority は high, medium, low のいずれか
     - generated_at は UTC の ISO-8601 形式にする
     - overall_summary, why_relevant, recommended_action, reason などの本文値は日本語で出力する
+    - overall_summary は 2 文以内で短くまとめる
+    - why_relevant は 1 文で簡潔にする
+    - recommended_action は 1 文で簡潔にする
 
     ジョブ名: {job_name}
 
