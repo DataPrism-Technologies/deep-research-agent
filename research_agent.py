@@ -691,16 +691,11 @@ def format_cost_line(cost_estimate: CostEstimate) -> str:
 
 def build_slack_payload(job: Job, result: dict[str, Any], cost_estimate: CostEstimate | None = None) -> dict[str, Any]:
     opportunities = first_opportunities(result.get("opportunities", []))
-    summary = truncate(str(result.get("overall_summary", "")).strip(), 240) or "No summary returned."
 
     blocks: list[dict[str, Any]] = [
         {
             "type": "header",
             "text": {"type": "plain_text", "text": f"🔎 リサーチ結果: {job.name}", "emoji": True},
-        },
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": summary},
         },
     ]
 
