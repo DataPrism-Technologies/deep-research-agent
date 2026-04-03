@@ -660,28 +660,25 @@ def slack_link(url: str, label: str) -> str:
 
 
 def format_opportunity_lines(item: dict[str, Any]) -> str:
-    name = str(item.get("name", "Untitled opportunity")).strip() or "Untitled opportunity"
-    date_text = str(item.get("date_text", "Date TBD")).strip() or "Date TBD"
+    name = str(item.get("name", "無題のイベント")).strip() or "無題のイベント"
+    date_text = str(item.get("date_text", "日程未定")).strip() or "日程未定"
     date_iso = str(item.get("date_iso", "")).strip()
     area = str(item.get("area", "")).strip()
     prefecture = str(item.get("prefecture", "")).strip()
     location = " / ".join(part for part in (area, prefecture) if part)
     relevance = truncate(str(item.get("why_relevant", "")).strip(), 90)
     action = truncate(str(item.get("recommended_action", "")).strip(), 70)
-    source_title = str(item.get("source_title", "")).strip() or "Source"
     source_url = str(item.get("source_url", "")).strip()
     slack_date = format_slack_date(date_iso=date_iso, fallback_text=date_text)
 
     title_text = slack_link(source_url, name)
-    lines = [f"*{title_text}*", f"When: {slack_date}"]
+    lines = [f"*{title_text}*", f"開催日: {slack_date}"]
     if location:
-        lines.append(f"Where: {location}")
+        lines.append(f"場所: {location}")
     if relevance:
-        lines.append(f"Why: {relevance}")
+        lines.append(f"理由: {relevance}")
     if action:
-        lines.append(f"Action: {action}")
-    if source_url:
-        lines.append(f"Source: {slack_link(source_url, source_title)}")
+        lines.append(f"次アクション: {action}")
     return "\n".join(lines)
 
 
@@ -699,7 +696,7 @@ def build_slack_payload(job: Job, result: dict[str, Any], cost_estimate: CostEst
     blocks: list[dict[str, Any]] = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": f"🔎 Research Update: {job.name}", "emoji": True},
+            "text": {"type": "plain_text", "text": f"🔎 リサーチ結果: {job.name}", "emoji": True},
         },
         {
             "type": "section",
@@ -723,7 +720,7 @@ def build_slack_payload(job: Job, result: dict[str, Any], cost_estimate: CostEst
             {"type": "divider"},
             {
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": "📅 *Top opportunities*"},
+                "text": {"type": "mrkdwn", "text": "📅 *有望な候補*"},
             },
         ]
     )
@@ -740,11 +737,11 @@ def build_slack_payload(job: Job, result: dict[str, Any], cost_estimate: CostEst
         blocks.append(
             {
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": "_No actionable opportunities were found in this run._"},
+                "text": {"type": "mrkdwn", "text": "_今回の実行では有望な候補は見つかりませんでした。_"},
             }
         )
 
-    return {"text": f"Research Update: {job.name}", "blocks": blocks}
+    return {"text": f"リサーチ結果: {job.name}", "blocks": blocks}
 
 
 def send_slack_notification(webhook_url: str, payload: dict[str, Any]) -> None:
